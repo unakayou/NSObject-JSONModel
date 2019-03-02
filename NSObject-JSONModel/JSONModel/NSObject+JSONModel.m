@@ -1,6 +1,6 @@
 //
 //  NSObject+JSONModel.m
-//  XiaoWeiTreasure
+//  
 //
 //  Created by unakayou on 15/10/26.
 //  Copyright © 2015年 unakayou. All rights reserved.
@@ -11,41 +11,62 @@
 
 @implementation NSObject (JSONModel)
 
-/**
- *  往模型里追加属性
- */
-+ (void)model:(id)model appendProperties:(objc_property_t *)properties count:(unsigned int)outCount infoDict:(NSDictionary *)dict
+//数据生成模型入口
++ (instancetype)modelFromJSONDictionary:(NSDictionary *)dict
+{
+    id model = [self new];
+
+    NSString * selfClassStr = NSStringFromClass([self class]);
+    Class selfClass = NSClassFromString(selfClassStr);
+    if (selfClass != [NSObject class])
+    {
+        Class superClass = [selfClass superclass];
+        if (superClass != [NSObject class])
+        {
+            unsigned int superOutCount;
+            objc_property_t *superProperties = class_copyPropertyList(superClass, &superOutCount);
+            [self model:model appendProperties:superProperties count:superOutCount jsonDict:dict];
+            free(superProperties);
+        }
+    }
+
+    unsigned int outCount;
+    objc_property_t *properties = class_copyPropertyList([self class], &outCount);
+    [self model:model appendProperties:properties count:outCount jsonDict:dict];
+    free(properties);
+    return model;
+}
+
+//从数据生成模型
++ (void)model:(id)model appendProperties:(objc_property_t *)properties count:(unsigned int)outCount jsonDict:(NSDictionary *)jsonDict
 {
     for (int i = 0; i < outCount; i++)
     {
         objc_property_t property = properties[i];
-        //属性名称
-        NSString *propertyName = [[NSString alloc] initWithCString:property_getName(property) encoding:NSUTF8StringEncoding];
-        //属性类型
-        NSString *propertyType = [[NSString alloc] initWithCString:property_getAttributes(property) encoding:NSUTF8StringEncoding];
+        NSString * propertyName = [[NSString alloc] initWithCString:property_getName(property) encoding:NSUTF8StringEncoding];          //变量名
+        NSString * propertyType = [[NSString alloc] initWithCString:property_getAttributes(property) encoding:NSUTF8StringEncoding];    //变量类型
         
-        if ([[dict allKeys] containsObject:propertyName])
+        if ([[jsonDict allKeys] containsObject:propertyName])
         {
-            id value = [dict valueForKey:propertyName];
-            if (![value isKindOfClass:[NSNull class]] && value != nil)
+            id jsonValue = [jsonDict valueForKey:propertyName];     //取出JSON对应property名字的值
+            if (![jsonValue isKindOfClass:[NSNull class]] && jsonValue != nil)
             {
-                if ([value isKindOfClass:[NSDictionary class]])
+                if ([jsonValue isKindOfClass:[NSDictionary class]]) //如果是字典类型 则寻找对应的类 创建对象添加到模型中
                 {
-                    Class aClass = [[NSBundle mainBundle] classNamed:[self getClassName:propertyType]];
-                    if (aClass)
+                    Class propertyClass = [[NSBundle mainBundle] classNamed:[self getClassName:propertyType]];
+                    if (propertyClass)
                     {
-                        id pro = [aClass modelFromJSONDictionary:value];
-                        [model setValue:pro forKey:propertyName];
+                        id propertyObject = [propertyClass modelFromJSONDictionary:jsonValue];
+                        [model setValue:propertyObject forKey:propertyName];
                     }
-                    else
+                    else    //如果没有找到这个类 则直接把字典加进去
                     {
-                        [model setValue:value forKey:propertyName];
+                        [model setValue:jsonValue forKey:propertyName];
                     }
                 }
-                else if ([value isKindOfClass:[NSArray class]])
+                else if ([jsonValue isKindOfClass:[NSArray class]]) //如果是个数组 则遍历这个数组 碰到里面是字典的转化为对象(对象的类名必须声明为protocol!!!)
                 {
-                    //如果是个数组 则遍历这个数组 碰到里面是字典的转化为对象 其他的不做操作
-                    NSMutableArray * mutableArray = [value mutableCopy];
+                    NSMutableArray * mutableArray = [jsonValue mutableCopy];
                     [mutableArray enumerateObjectsUsingBlock:^(id  _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
                         if ([obj isKindOfClass:[NSDictionary class]])
                         {
@@ -60,19 +81,20 @@
                 }
                 else    //乱七八糟圈往里塞就完了
                 {
-                    [model setValue:value forKey:propertyName];
+                    [model setValue:jsonValue forKey:propertyName];
                 }
             }
         }
     }
 }
 
-+ (instancetype)modelFromJSONDictionary:(NSDictionary *)dict
+//模型解析数据入口
+- (NSDictionary *)dictionaryFromObject
 {
-    id model = [self new];
-
+    //父类的属性(只取上一层父类,多层暂不考虑)
     NSString * selfClassStr = NSStringFromClass([self class]);
     Class selfClass = NSClassFromString(selfClassStr);
+    NSMutableDictionary * superJSONDict = nil;
     if (selfClass != [NSObject class])
     {
         Class superClass = [selfClass superclass];
@@ -80,26 +102,23 @@
         {
             unsigned int superOutCount;
             objc_property_t *superProperties = class_copyPropertyList(superClass, &superOutCount);
-            [self model:model appendProperties:superProperties count:superOutCount infoDict:dict];
+            superJSONDict = [[self model:self withProperties:superProperties count:superOutCount] mutableCopy];
             free(superProperties);
         }
     }
 
     unsigned int outCount;
-    objc_property_t *properties = class_copyPropertyList([self class], &outCount);
-    [self model:model appendProperties:properties count:outCount infoDict:dict];
+    objc_property_t * properties = class_copyPropertyList([self class], &outCount);
+    NSMutableDictionary * retDict = [[NSMutableDictionary alloc] initWithDictionary:superJSONDict];
+    [retDict setDictionary:[self model:self withProperties:properties count:outCount]];
     free(properties);
-    return model;
+    return retDict;
 }
 
-- (NSDictionary *)dictionaryFromObject
+//从模型解析数据
+- (NSDictionary *)model:(id)model withProperties:(objc_property_t *)properties count:(unsigned int)outCount
 {
     NSMutableDictionary * retDict = [[NSMutableDictionary alloc] initWithCapacity:0];
-    
-    //获取property数量
-    unsigned int outCount;
-    objc_property_t * properties = class_copyPropertyList([self class], &outCount);
-    
     for (int i = 0; i < outCount; i++)
     {
         objc_property_t property = properties[i];
@@ -107,36 +126,34 @@
         NSString * propertyType = [[NSString alloc] initWithCString:property_getAttributes(property) encoding:NSUTF8StringEncoding];
         
         SEL function = NSSelectorFromString(propertyName);
-        
         if ([self respondsToSelector:function])
         {
+            //取出对象内的属性值
             IMP imp = [self methodForSelector:function];
             id (*func)(id, SEL) = (void *)imp;
-            id value = func(self, function);
+            id propertyValue = func(self, function);
             
-            if ([value isKindOfClass:[NSString class]] || [value isKindOfClass:[NSNumber class]])
+            if ([propertyValue isKindOfClass:[NSString class]] || [propertyValue isKindOfClass:[NSNumber class]] || [propertyValue isKindOfClass:[NSSet class]])
             {
-                [retDict setObject:value forKey:propertyName];
-
+                [retDict setObject:propertyValue forKey:propertyName];
             }
-            else if ([value isKindOfClass:[NSArray class]])
+            else if ([propertyValue isKindOfClass:[NSArray class]]) //如果属性是一个数组 则遍历
             {
-                //如果objc里面有另外一个dict,需要另外判断
-                NSMutableArray * mutableArray = [value mutableCopy];
+                NSMutableArray * mutableArray = [propertyValue mutableCopy];
                 [mutableArray enumerateObjectsUsingBlock:^(id  _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
                     Class propertyClass = NSClassFromString([self getProtocol:propertyType]);
-                    if (propertyClass)
+                    if ([obj isKindOfClass:propertyClass])  //如果数组内部的对象和protocol声明的一样。则把对象递归解析,用解析后字典替换原对象。如果是其他类型 则不做操作
                     {
                         [mutableArray replaceObjectAtIndex:idx withObject:[obj dictionaryFromObject]];
                     }
                 }];
                 [retDict setObject:mutableArray forKey:propertyName];
             }
-            else
+            else    //如果是其他对象 则解析后放入
             {
                 if (NSClassFromString([self getClassName:propertyType]))
                 {
-                    [retDict setObject:[value dictionaryFromObject] forKey:propertyName];
+                    [retDict setObject:[propertyValue dictionaryFromObject] forKey:propertyName];
                 }
             }
         }
@@ -144,75 +161,11 @@
     return retDict;
 }
 
-- (BOOL)reflectDataFromOtherObject:(NSDictionary *)dic
-{
-    unsigned int outCount, i;
-    objc_property_t *properties = class_copyPropertyList([self class], &outCount);
-    
-    for (i = 0; i < outCount; i++)
-    {
-        objc_property_t property = properties[i];
-        NSString *propertyName = [[NSString alloc] initWithCString:property_getName(property) encoding:NSUTF8StringEncoding];
-        NSString *propertyType = [[NSString alloc] initWithCString:property_getAttributes(property) encoding:NSUTF8StringEncoding];
-        
-        if ([[dic allKeys] containsObject:propertyName])
-        {
-            id value = [dic valueForKey:propertyName];
-            if (![value isKindOfClass:[NSNull class]] && value != nil)
-            {
-                if ([value isKindOfClass:[NSDictionary class]])
-                {
-                    id pro = [self createInstanceByClassName:[self getClassName:propertyType]];
-                    [pro reflectDataFromOtherObject:value];
-                    [self setValue:pro forKey:propertyName];
-                }
-                else
-                {
-                    [self setValue:value forKey:propertyName];
-                }
-            }
-        }
-    }
-    
-    free(properties);
-    return YES;
-}
-
-- (NSString *)getClassName:(NSString *)attributes
-{
-    NSInteger index = [attributes rangeOfString:@"\""].location + 1;
-    if (index <= attributes.length)
-    {
-        NSString *type = [attributes substringFromIndex:index];
-        type = [type substringToIndex:[type rangeOfString:@"\""].location];
-        return type;
-    }
-    return attributes;
-}
-
-- (NSString *)getProtocol:(NSString *)attributes
-{
-    NSInteger index = [attributes rangeOfString:@"<"].location + 1;
-    if (index <= attributes.length)
-    {
-        NSString *type = [attributes substringFromIndex:index];
-        type = [type substringToIndex:[type rangeOfString:@">"].location];
-        return type;
-    }
-    return attributes;
-}
-
-- (id)createInstanceByClassName: (NSString *)className
-{
-    Class aClass = [[NSBundle mainBundle] classNamed:className];
-    id anInstance = [[aClass alloc] init];
-    return anInstance;
-}
-
 - (instancetype)updateModelWithAnotherModel:(NSObject *)model
 {
+    if (![model isMemberOfClass:[self class]]) return self;
+
     unsigned int outCount, subCount;
-    
     objc_property_t * properties = class_copyPropertyList([self class], &outCount);     //本身的属性
     objc_property_t * subProperties = class_copyPropertyList([model class], &subCount); //传进来的属性
 
@@ -242,6 +195,37 @@
     free(properties);
     free(subProperties);
     return self;
+}
+
+- (NSString *)getClassName:(NSString *)attributes
+{
+    NSInteger index = [attributes rangeOfString:@"\""].location + 1;
+    if (index <= attributes.length)
+    {
+        NSString *type = [attributes substringFromIndex:index];
+        type = [type substringToIndex:[type rangeOfString:@"\""].location];
+        return type;
+    }
+    return attributes;
+}
+
+- (NSString *)getProtocol:(NSString *)attributes
+{
+    NSInteger index = [attributes rangeOfString:@"<"].location + 1;
+    if (index <= attributes.length)
+    {
+        NSString *type = [attributes substringFromIndex:index];
+        type = [type substringToIndex:[type rangeOfString:@">"].location];
+        return type;
+    }
+    return attributes;
+}
+
+- (id)getInstanceByClassName:(NSString *)className
+{
+    Class aClass = [[NSBundle mainBundle] classNamed:className];
+    id anInstance = [[aClass alloc] init];
+    return anInstance;
 }
 
 @end

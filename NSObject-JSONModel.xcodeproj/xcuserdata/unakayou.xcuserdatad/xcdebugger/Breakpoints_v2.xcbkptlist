@@ -10,11 +10,11 @@
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "NSObject-JSONModel/JSONModel/NSObject+JSONModel.m"
-            timestampString = "573153747.657451"
+            timestampString = "573220312.103424"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "97"
-            endingLineNumber = "97"
+            startingLineNumber = "94"
+            endingLineNumber = "94"
             landmarkName = "-dictionaryFromObject"
             landmarkType = "7">
          </BreakpointContent>
@@ -22,16 +22,16 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            shouldBeEnabled = "Yes"
+            shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "NSObject-JSONModel/ViewController.m"
-            timestampString = "573153747.657591"
+            filePath = "NSObject-JSONModel/JSONModel/NSObject+JSONModel.m"
+            timestampString = "573220312.103838"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "26"
-            endingLineNumber = "26"
-            landmarkName = "-viewDidLoad"
+            startingLineNumber = "121"
+            endingLineNumber = "121"
+            landmarkName = "-model:withProperties:count:"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
